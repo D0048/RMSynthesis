@@ -13,7 +13,7 @@ from progressbar import ProgressBar
 
 is_HAL = len(glob.glob('/home/shared/imagenet/raw/val_nodir/'))
 if not is_HAL:
-    fg_path = './models/Batch Renderding/scene/image_out/*'
+    fg_path = './models/Batch Renderding/renders/scene_without_numbers/image_out/*'
     bg_paths = ['/run/media/d0048/DATA/data/imagenet/raw/val_nodir/*']
     fg_num = 10
 else:  # On server
@@ -91,8 +91,8 @@ seq = iaa.Sequential(
             ]),
             iaa.Add((-40, 40), per_channel=0.5),
             iaa.Multiply((0.8, 1.5), per_channel=0.5),
-            # iaa.imgcorruptlike.Contrast(severity=1),
-            # iaa.imgcorruptlike.Brightness(severity=2),
+            iaa.imgcorruptlike.Contrast(severity=1),
+            iaa.imgcorruptlike.Brightness(severity=2),
             iaa.ContrastNormalization((0.5, 2.0), per_channel=0.5),
         ],
             random_order=True
@@ -103,10 +103,7 @@ seq = iaa.Sequential(
 
 
 def augment_pair(fg, label):
-    # print(fg.shape)
-    # print(label.shape)
     label_i, segmaps_aug_i = seq(images=fg, segmentation_maps=label)
-    #ret = seq(images=fg, segmentation_maps=label)
     return label_i, segmaps_aug_i
 
 
@@ -174,7 +171,7 @@ def area_percent(img):
 
 
 def get_blended(plot=False, augment=True):
-    bg, bg_label = get_bg_pair()
+    bg, bg_label = get_bg_pair() # an image and an empty label of size res
     para = get_para()
     n = 0
     while area_percent(np.array(bg_label)) < para['min_area'] and n <= np.min(para['min_num']):
@@ -190,18 +187,19 @@ def get_blended(plot=False, augment=True):
         bg_label.paste(label, loc, label)
         n += 1
 
-    fg = np.expand_dims(fg, axis=0)  # [:,:,:,0:3]
-    label = np.expand_dims(label, axis=0)
+    bg,bg_label = np.array(bg),np.array(bg_label)
+    #print('bg_shape',bg.shape)
+    #print('bg_label_shape',bg_label.shape)
+    bg = np.expand_dims(bg, axis=0)  # [:,:,:,0:3]
+    bg_label = np.expand_dims(bg_label, axis=0)
     # Augmentation
     if augment:
         bg, bg_label = augment_pair(np.array(bg), np.array(bg_label))
         bg, bg_label = bg.squeeze(), bg_label.squeeze()
-        # print('Agumented')
-    else:
-        bg, bg_label = np.array(bg), np.array(bg_label)
+        #print('Agumented')
     if plot:
         print(para)
         plt.figure(figsize=(5, 5))
-        plt.imshow(bg)
-        plt.imshow(bg_label)
+        plt.imshow(bg.squeeze())
+        plt.imshow(bg_label.squeeze())
     return bg, bg_label

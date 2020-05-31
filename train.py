@@ -28,9 +28,10 @@ def load_train(queue):
         label_batch = []
         while img_batch.__len__() < batch_size:
             try:
-                img, label = get_blended(plot=False, augment=False)
+                img, label = get_blended(plot=False, augment=True)
                 img = np.array(img)
-                if(img.shape[2]!=3): continue
+                if(img.shape[2] != 3):
+                    continue
                 label = np.array(label)
                 label = np.sum(label, axis=2, keepdims=True)
                 label[label != 0] = 1

@@ -5,7 +5,7 @@ from img_utils import *
 
 
 class Model(nn.Module):
-    def __init__(self, in_channels=3, out_channels=1, channels=128, kernel_size=3, dropout=0.):
+    def __init__(self, in_channels=3, out_channels=1, channels=256, kernel_size=3, dropout=0.):
         super(Model, self).__init__()
         padding = int(kernel_size/2)
         ops = [
