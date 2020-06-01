@@ -11,7 +11,7 @@ import glob
 import numpy as np
 np.random.seed(0)
 
-batch_size = 16
+batch_size = 12
 
 model = Model()
 device = torch.device("cuda:0" if torch.cuda.is_available()
@@ -28,15 +28,13 @@ def load_train(queue):
         label_batch = []
         while img_batch.__len__() < batch_size:
             try:
-                img, label = get_blended(plot=False, augment=True)
+                img, label = get_blended(plot=False, augment=False)
                 img = np.array(img)
-                if(img.shape[2] != 3):
+                if(len(img.shape) != 3 or img.shape[2] != 3):
                     continue
                 label = np.array(label)
                 label = np.sum(label, axis=2, keepdims=True)
                 label[label != 0] = 1
-                # print(img.shape)
-                # print(label.shape)
                 img_batch.append(img.astype(np.float))
                 label_batch.append(label.astype(np.float))
             except Exception as e:
@@ -46,6 +44,7 @@ def load_train(queue):
         img_batch = np.array(img_batch)
         # print(img_batch.shape)
         img_batch = img_batch.transpose([0, 3, 1, 2])
+        img_batch[img_batch!=0] /= 255
         label_batch = np.array(label_batch)
         # print(label_batch.shape)
         label_batch = label_batch.transpose([0, 3, 1, 2])
@@ -54,7 +53,7 @@ def load_train(queue):
 
 
 q_train = torch.multiprocessing.Queue(maxsize=100)
-for i in range(1):
+for i in range(24):
     p1 = torch.multiprocessing.Process(target=load_train, args=(q_train,))
 # load_train(q_train)
 p1.start()
@@ -63,6 +62,7 @@ save_directory_name = './checkpoint'
 sample_directory_name = './samples'
 
 optimizer = torch.optim.Adam(model.parameters(), lr=1.0e-3)
+# optimizer = torch.optim.RMSprop(model.parameters(), lr=1.0e-3)
 criterion = nn.BCELoss().to(device)
 for e in range(10000000):
     model.train()
@@ -70,11 +70,9 @@ for e in range(10000000):
     img = torch.tensor(pair[0], dtype=torch.float,
                        requires_grad=True, device=device)
     label = torch.tensor(pair[1], dtype=torch.float, device=device)
+
     optimizer.zero_grad()
-    # print('img: ',img.shape)
-    # print('label: ',label.shape)
     pred = model(img)
-    # print('pred: ',pred.shape)
     loss = criterion(pred.reshape([batch_size, -1]),
                      label.reshape([batch_size, -1]))
     loss.backward()

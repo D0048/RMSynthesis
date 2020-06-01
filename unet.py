@@ -9,7 +9,7 @@ def downconv(in_channels, out_channels, kernel_size):
     return nn.Sequential(
         nn.Conv2d(in_channels=in_channels, out_channels=out_channels,
                   kernel_size=kernel_size, padding=padding),
-        nn.ReLU(),
+        nn.ReLU(inplace=True),
     )
 
 
@@ -25,14 +25,14 @@ def up(in_channels, out_channels, kernel_size):
     return nn.Sequential(
         nn.Conv2d(in_channels=in_channels, out_channels=out_channels,
                   kernel_size=kernel_size, padding=padding),
-        nn.ReLU(),
-        # nn.Upsample(scale_factor=2)
+        nn.ReLU(inplace=True),
+        nn.Upsample(scale_factor=2)
     )
 
 
 # %%
 class Model(nn.Module):
-    def __init__(self, in_channels=3, channels=64, kernel_size=5, dropout=0.5):
+    def __init__(self, in_channels=3, channels=128, kernel_size=5, dropout=0.5):
         super(Model, self).__init__()
         self.dropout = dropout
         self.downconv1 = downconv(in_channels, channels, kernel_size)
@@ -44,17 +44,20 @@ class Model(nn.Module):
         self.up1 = up(4 * channels, 4 * channels, kernel_size)
         self.up2 = up(8 * channels, 2 * channels, kernel_size)
         self.up3 = up(4 * channels, channels, kernel_size)
-        self.upsample1 = nn.Upsample(tuple((np.array([res[1],res[0]])/4).astype(int)))
-        self.upsample2 = nn.Upsample(tuple((np.array([res[1],res[0]])/2).astype(int)))
-        self.upsample3 = nn.Upsample(tuple((np.array([res[1],res[0]])).astype(int)))
+        self.upsample1 = nn.Upsample(
+            tuple((np.array([res[1], res[0]])/4).astype(int)))
+        self.upsample2 = nn.Upsample(
+            tuple((np.array([res[1], res[0]])/2).astype(int)))
+        self.upsample3 = nn.Upsample(
+            tuple((np.array([res[1], res[0]])).astype(int)))
         padding = int(kernel_size / 2)
         self.last = nn.Sequential(
             nn.Conv2d(in_channels=2 * channels, out_channels=channels,
                       kernel_size=kernel_size, padding=padding),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             nn.Conv2d(in_channels=channels, out_channels=channels,
                       kernel_size=kernel_size, padding=padding),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             nn.Conv2d(in_channels=channels, out_channels=1, kernel_size=1),
             nn.Sigmoid()
         )
@@ -67,20 +70,22 @@ class Model(nn.Module):
         d3 = self.downconv3(ds2)
         ds3 = self.downsamp3(d3)
         u = self.up1(ds3)
-        u = self.upsample1(u)
+        #u = self.upsample1(u)
         u = torch.cat((d3, u), dim=1)
         u = nn.Dropout2d(self.dropout)(u)
         u = self.up2(u)
-        u = self.upsample2(u)
+        #u = self.upsample2(u)
         u = torch.cat((d2, u), dim=1)
         u = nn.Dropout2d(self.dropout)(u)
         u = self.up3(u)
-        u = self.upsample3(u)
+        #u = self.upsample3(u)
         u = torch.cat((d1, u), dim=1)
         u = nn.Dropout2d(self.dropout)(u)
         u = self.last(u)
-        u = u.reshape(-1, res[1], res[0])
+        #u = u.reshape(-1, res[1], res[0])
         return u
+
+
 print('Using Custom Unet')
 
 if __name__ == "__main__":
