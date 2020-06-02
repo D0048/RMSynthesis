@@ -11,7 +11,7 @@ import glob
 import numpy as np
 np.random.seed(0)
 
-batch_size = 12
+batch_size = 16
 
 model = Model()
 device = torch.device("cuda:0" if torch.cuda.is_available()
@@ -28,7 +28,7 @@ def load_train(queue):
         label_batch = []
         while img_batch.__len__() < batch_size:
             try:
-                img, label = get_blended(plot=False, augment=False)
+                img, label = get_blended(plot=False, augment=True)
                 img = np.array(img)
                 if(len(img.shape) != 3 or img.shape[2] != 3):
                     continue
@@ -52,8 +52,8 @@ def load_train(queue):
         # print('load')
 
 
-q_train = torch.multiprocessing.Queue(maxsize=100)
-for i in range(24):
+q_train = torch.multiprocessing.Queue(maxsize=200)
+for i in range(32):
     p1 = torch.multiprocessing.Process(target=load_train, args=(q_train,))
 # load_train(q_train)
 p1.start()
@@ -61,9 +61,10 @@ p1.start()
 save_directory_name = './checkpoint'
 sample_directory_name = './samples'
 
-optimizer = torch.optim.Adam(model.parameters(), lr=1.0e-3)
+optimizer = torch.optim.Adam(model.parameters(), lr=1.0e-4)
 # optimizer = torch.optim.RMSprop(model.parameters(), lr=1.0e-3)
-criterion = nn.BCELoss().to(device)
+# criterion = nn.BCELoss().to(device)
+criterion = nn.MSELoss().to(device)
 for e in range(10000000):
     model.train()
     pair = q_train.get()

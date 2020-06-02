@@ -14,13 +14,17 @@ from progressbar import ProgressBar
 is_HAL = len(glob.glob('/home/shared/imagenet/raw/val_nodir/'))
 if not is_HAL:
     fg_path = './models/Batch Renderding/renders/scene_horizontal_no_number/image_out/*'
-    bg_paths = ['/run/media/d0048/DATA/data/imagenet/raw/val_nodir/*']
-    fg_num = 10
+    bg_paths = ['/run/media/d0048/DATA/data/imagenet/raw/val_nodir/**']
+    fg_num = -1
 else:  # On server
     fg_path = '/home/xiaoboh2/rm_synethesis_hal/data/Synethesized_Dataset/dataset_horizontal/image_out/*'
-    bg_paths = ['/home/shared/imagenet/raw/val_nodir/'] + \
-        glob.glob('/home/shared/imagenet/raw/train/*')
-    fg_num = 50
+    # fg_path = '/home/xiaoboh2/rm_synethesis_hal/data/Synethesized_Dataset/data_set_horizontal_new/image_out/*'
+    # fg_path = '/home/xiaoboh2/rm_synethesis_hal/data/Synethesized_Dataset/dataset_out/image_out/*'
+    fg_num = 500
+
+    # bg_paths = ['/home/shared/imagenet/raw/val_nodir/**']
+    # bg_paths = ['/home/shared/imagenet/raw/**']
+    bg_paths = ['./data/ade20k/ade20k_nodir/*']
 
 fg_seg_pairs = []
 
@@ -38,20 +42,37 @@ print(f'Loading forgrounds from {fg_path}:')
 pbar = ProgressBar()
 files = glob.glob(fg_path)
 files.sort()
-for name in pbar(files[0:fg_num]):
+for name in (files):
     try:
         image = cv2.imread(name, cv2.IMREAD_UNCHANGED)
         image[:, :, 0], image[:, :, 2] = image[:, :, 2], image[:, :, 0].copy()
         label = cv2.imread(name.replace('image', 'label'),
                            cv2.IMREAD_UNCHANGED)
         label = crop_zero(label, reference=image)
+        label = np.sum(label, axis=2)
+        label[label != 0] = 255
+        label = np.uint8(label)
+
+        # Remove armor places with too small visible area
+        nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(
+            label, connectivity=8)
+        sizes = stats[1:, -1]
+        # print(sizes)
+        min_size = 5000
+        label = np.zeros_like(label)
+        for i in range(0, nb_components-1):
+            if sizes[i] >= min_size:
+                label[output == i + 1] = 255
+        label = cv2.cvtColor(label, cv2.COLOR_GRAY2RGBA)
+        label[:, :, 3] = label[:, :, 0]
+
         if(np.sum(label) == 0):
             continue
-        # label=np.sum(label,axis=2)
         # label[label>0]=1
         image = crop_zero(image)
         fg_seg_pairs += [[image, label]]
-    except:
+    except Exception as e:
+        # raise e
         pass
 print(f'{len(fg_seg_pairs)} pairs of foreground loaded.')
 
@@ -64,40 +85,31 @@ def sometimes(aug): return iaa.Sometimes(0.5, aug)
 seq = iaa.Sequential(
     [
         iaa.Fliplr(0.5),  # horizontally flip 50% of all images
-        iaa.SomeOf((0, 5),
+        iaa.SomeOf((0, 7),
                    [
-            # sometimes(
-                # iaa.Superpixels(
-                    # p_replace=(0, .2),
-                    # n_segments=(40, 100)
-                # )
-            # ),
             iaa.OneOf([
-                iaa.GaussianBlur((0, 1.0)),
-                # iaa.AverageBlur(k=(2, 7)),
-                # iaa.MedianBlur(k=(3, 9)),
+                iaa.GaussianBlur((0, 0.3)),
             ]),
-            iaa.Sharpen(alpha=(0, 1.0), lightness=(0.75, 1.5)),
+            #iaa.Sharpen(alpha=(0, 1.0), lightness=(0.75, 1.5)),
             # iaa.Emboss(alpha=(0, 1.0), strength=(0, 2.0)),
-            iaa.AdditiveGaussianNoise(
-                loc=0, scale=(0.0, 0.05*255), per_channel=0.5
-            ),
-            # iaa.OneOf([
-                # iaa.Dropout((0.01, 0.1), per_channel=0.5),
-                # iaa.CoarseDropout(
-                # (0.03, 0.15), size_percent=(0.02, 0.05),
-                # per_channel=0.2
-                # ),
-            # ]),
-            iaa.Add((-15, 15), per_channel=0.5),
-            iaa.Multiply((0.8, 1.2), per_channel=0.5),
-            iaa.imgcorruptlike.Contrast(severity=1),
-            iaa.imgcorruptlike.Brightness(severity=1),
-            iaa.ContrastNormalization((0.5, 2.0), per_channel=0.5),
+            # iaa.AdditiveGaussianNoise(
+            # loc=0, scale=(0.0, 0.02*255), per_channel=0.5
+            # ),
+            # iaa.Add((-15, 15), per_channel=0.5),
+            # iaa.Multiply((0.8, 1.2), per_channel=0.5),
+            # iaa.imgcorruptlike.Contrast(severity=1),
+            # iaa.imgcorruptlike.Brightness(severity=2),
+            iaa.ContrastNormalization((0.7, 1.5), per_channel=0.5),
             iaa.WithHueAndSaturation([
                 iaa.WithChannels(0, iaa.Add((-15, 15))),
-                iaa.WithChannels(1, iaa.Add((-15, 15))),
+                iaa.WithChannels(1, iaa.Add((-20, 20))),
             ]),
+            iaa.GammaContrast((0.5, 1.5)),
+            iaa.WithBrightnessChannels(iaa.Add((-30, 70))),
+            iaa.ScaleX((0.5, 1.5)),
+            iaa.ScaleY((0.5, 1.5)),
+            iaa.ShearX((-10, 10)),
+            iaa.ShearY((-10, 10)),
         ],
             random_order=True
         )
@@ -111,8 +123,8 @@ def augment_pair(fg, label):
     return label_i, segmaps_aug_i
 
 
-res = [1080, 960]
-#res = [int(1080/4), int(960/4)]
+#res = [1080, 960]
+res = [int(1080/5), int(960/5)]
 # res = [270, 240]
 print('Resolution: ', res)
 # size ratio range, numbers, blur, shear, explosure
@@ -135,17 +147,22 @@ def get_pair_PIL():
     idx = np.random.randint(0, fg_seg_pairs.__len__())
     fg_pair = fg_seg_pairs[idx]
     fg = fg_pair[0].copy()
-    # fg[:,:,0:2]=0
-    # fg[:,:,3][fg[:,:,2]<140]=0
     fg = Image.fromarray(fg, 'RGBA')
+    # fg = np.array(fg)
+    # fg[:,:,0]*=0
+    # fg[:,:,1]*=0
+    # fg[:,:,3]*=fg[:,:,2]
+    # fg = Image.fromarray(fg)
     label = Image.fromarray(fg_pair[1], 'RGBA')
     return fg, label
 
 
 # Background File Buffer
+print(f'Scanning for backgrounds in {bg_paths}')
 bg_files = []
 for bg_path in bg_paths:
-    bg_files += glob.glob(bg_path+'*')
+    bg_files += list(filter(lambda f: True or os.path.isfile(f),
+                            glob.glob(bg_path, recursive=False)))
 print('{} backgrounds found. '.format(bg_files.__len__()))
 buffer = []
 buffered_files = []
@@ -186,9 +203,9 @@ def get_blended(plot=False, augment=True):
         fg = fg.resize(newsize)
         label = label.resize(newsize)
 
-        loc = (np.random.randint(120, res[0]-120),
-               np.random.randint(100, res[1]-100))
-        loc = (int(res[0]/2-newsize[0]/2), int(res[1]/2-newsize[1]/2))
+        xoff, yoff = (np.random.rand()-0.5)*50, (np.random.rand()-0.5)*50
+        loc = (int(res[0]/2-newsize[0]/2+xoff),
+               int(res[1]/2-newsize[1]/2+yoff))
 
         # print(loc)
         bg.paste(fg, loc, fg)
@@ -205,7 +222,7 @@ def get_blended(plot=False, augment=True):
         bg, bg_label = augment_pair(np.array(bg), np.array(bg_label))
     bg, bg_label = bg.squeeze(), bg_label.squeeze()
     if plot:
-        print(para)
+        # print(para)
         plt.figure(figsize=(5, 5))
         plt.imshow(bg.squeeze())
         plt.imshow(bg_label.squeeze())
