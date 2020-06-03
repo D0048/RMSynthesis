@@ -15,18 +15,17 @@ is_HAL = len(glob.glob('/home/shared/imagenet/raw/val_nodir/'))
 if not is_HAL:
     fg_path = './models/Batch Renderding/renders/scene_horizontal_no_number/image_out/*'
     bg_paths = ['/run/media/d0048/DATA/data/imagenet/raw/val_nodir/**']
-    fg_num = -1
+    fg_num = 32
 else:  # On server
-    fg_path = '/home/xiaoboh2/rm_synethesis_hal/data/Synethesized_Dataset/dataset_horizontal/image_out/*'
-    # fg_path = '/home/xiaoboh2/rm_synethesis_hal/data/Synethesized_Dataset/data_set_horizontal_new/image_out/*'
+    # fg_path = '/home/xiaoboh2/rm_synethesis_hal/data/Synethesized_Dataset/dataset_horizontal/image_out/*'
+    fg_path = '/home/xiaoboh2/rm_synethesis_hal/data/Synethesized_Dataset/data_set_horizontal_new/image_out/*'
     # fg_path = '/home/xiaoboh2/rm_synethesis_hal/data/Synethesized_Dataset/dataset_out/image_out/*'
-    fg_num = 500
+    fg_num = -1
 
     # bg_paths = ['/home/shared/imagenet/raw/val_nodir/**']
     # bg_paths = ['/home/shared/imagenet/raw/**']
+    # bg_paths = ['./data/ade20k/ade20k_nodir/*','/home/shared/imagenet/raw/val_nodir/*']
     bg_paths = ['./data/ade20k/ade20k_nodir/*']
-
-fg_seg_pairs = []
 
 
 def crop_zero(image, reference=None):
@@ -37,44 +36,49 @@ def crop_zero(image, reference=None):
     lower = np.squeeze(np.min(nonzeros, axis=0).astype(int))
     return image[lower[1]:upper[1], lower[0]:upper[0]]
 
+def load_foreground():
+    fg_seg_pairs = []
+    print(f'Loading forgrounds from {fg_path}:')
+    files = glob.glob(fg_path)
+    files.sort()
+    for name in ProgressBar()(files[0:min(len(files), fg_num)]):
+        try:
+            image = cv2.imread(name, cv2.IMREAD_UNCHANGED)
+            image[:, :, 0], image[:, :, 2] = image[:, :, 2], image[:, :, 0].copy()
+            label = cv2.imread(name.replace('image', 'label'),
+                               cv2.IMREAD_UNCHANGED)
+            label = crop_zero(label, reference=image)
 
-print(f'Loading forgrounds from {fg_path}:')
-pbar = ProgressBar()
-files = glob.glob(fg_path)
-files.sort()
-for name in (files):
-    try:
-        image = cv2.imread(name, cv2.IMREAD_UNCHANGED)
-        image[:, :, 0], image[:, :, 2] = image[:, :, 2], image[:, :, 0].copy()
-        label = cv2.imread(name.replace('image', 'label'),
-                           cv2.IMREAD_UNCHANGED)
-        label = crop_zero(label, reference=image)
-        label = np.sum(label, axis=2)
-        label[label != 0] = 255
-        label = np.uint8(label)
+            # Remove armor places with too small visible area
+            # mask = np.sum(label, axis=2).astype(np.uint8)
+            # mask[mask != 0] = 255
+            # nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(mask.copy(), connectivity=8)
+            # cv2.connectedComponentsWithStats(mask.copy(), connectivity=4)
+            # sizes = stats[1:, -1]
+            # print(sizes)
+            # min_size = 5000
+            # mask = np.zeros_like(mask)
+            # for i in range(0, nb_components-1):
+                # if sizes[i] >= min_size:
+                    # mask[output == i + 1] = 255
+            # label[:, :, 0][mask==0] = 0
+            # label[:, :, 1][mask==0] = 0
+            # label[:, :, 2][mask==0] = 0
+            # label[:, :, 3][mask==0] = 0
 
-        # Remove armor places with too small visible area
-        nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(
-            label, connectivity=8)
-        sizes = stats[1:, -1]
-        # print(sizes)
-        min_size = 5000
-        label = np.zeros_like(label)
-        for i in range(0, nb_components-1):
-            if sizes[i] >= min_size:
-                label[output == i + 1] = 255
-        label = cv2.cvtColor(label, cv2.COLOR_GRAY2RGBA)
-        label[:, :, 3] = label[:, :, 0]
-
-        if(np.sum(label) == 0):
-            continue
-        # label[label>0]=1
-        image = crop_zero(image)
-        fg_seg_pairs += [[image, label]]
-    except Exception as e:
-        # raise e
-        pass
-print(f'{len(fg_seg_pairs)} pairs of foreground loaded.')
+            if(np.sum(label) == 0):
+                print('Skip empty')
+                continue
+            # label[label>0]=1
+            image = crop_zero(image)
+            fg_seg_pairs += [[image, label]]
+        except Exception as e:
+            print(e)
+            # raise e
+            pass
+    print(f'{len(fg_seg_pairs)} pairs of foreground loaded.')
+    return fg_seg_pairs
+fg_seg_pairs = load_foreground()
 
 ia.seed(1)
 
@@ -99,7 +103,7 @@ seq = iaa.Sequential(
             # iaa.Multiply((0.8, 1.2), per_channel=0.5),
             # iaa.imgcorruptlike.Contrast(severity=1),
             # iaa.imgcorruptlike.Brightness(severity=2),
-            iaa.ContrastNormalization((0.7, 1.5), per_channel=0.5),
+            iaa.ContrastNormalization((0.1, 1.5), per_channel=0.5),
             iaa.WithHueAndSaturation([
                 iaa.WithChannels(0, iaa.Add((-15, 15))),
                 iaa.WithChannels(1, iaa.Add((-20, 20))),
@@ -119,7 +123,9 @@ seq = iaa.Sequential(
 
 
 def augment_pair(fg, label):
+    # print('Augment start')
     label_i, segmaps_aug_i = seq(images=fg, segmentation_maps=label)
+    # print('Augment ok')
     return label_i, segmaps_aug_i
 
 
@@ -168,11 +174,11 @@ buffer = []
 buffered_files = []
 
 
-def get_bg_pair():
+def get_bg_pair(do_buffer=True):
     # print(buffer.__len__())
     files = bg_files
     idx = np.random.randint(0, bg_path.__len__())
-    if(files[idx] in buffered_files):
+    if(do_buffer and files[idx] in buffered_files):
         idx = np.random.randint(0, buffer.__len__())
         bg = buffer[idx][0]
         bg_label = buffer[idx][1]

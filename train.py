@@ -39,12 +39,11 @@ def load_train(queue):
                 label_batch.append(label.astype(np.float))
             except Exception as e:
                 print(e)
-                # raise e
                 continue
         img_batch = np.array(img_batch)
         # print(img_batch.shape)
         img_batch = img_batch.transpose([0, 3, 1, 2])
-        img_batch[img_batch!=0] /= 255
+        img_batch[img_batch != 0] /= 255
         label_batch = np.array(label_batch)
         # print(label_batch.shape)
         label_batch = label_batch.transpose([0, 3, 1, 2])
@@ -53,10 +52,9 @@ def load_train(queue):
 
 
 q_train = torch.multiprocessing.Queue(maxsize=200)
-for i in range(32):
+for i in range(16):
     p1 = torch.multiprocessing.Process(target=load_train, args=(q_train,))
-# load_train(q_train)
-p1.start()
+    p1.start()
 
 save_directory_name = './checkpoint'
 sample_directory_name = './samples'
@@ -78,9 +76,10 @@ for e in range(10000000):
                      label.reshape([batch_size, -1]))
     loss.backward()
     optimizer.step()
-    print(f'Iteration: {e}, Loss: {loss}')
 
-    if e % 64 == 0:
+    if e % 8 == 0:
+        print(f'Iteration: {e}, Loss: {loss}')
+    if e % 512 == 511:
         np.savez_compressed(sample_directory_name +
                             '/sample', pred.cpu().data.numpy())
         np.savez_compressed(sample_directory_name +
