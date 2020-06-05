@@ -11,7 +11,7 @@ import glob
 import numpy as np
 np.random.seed(0)
 
-batch_size = 16
+batch_size = 32
 
 model = Model()
 device = torch.device("cuda:0" if torch.cuda.is_available()

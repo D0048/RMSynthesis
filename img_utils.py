@@ -15,7 +15,7 @@ is_HAL = len(glob.glob('/home/shared/imagenet/raw/val_nodir/'))
 if not is_HAL:
     fg_path = './models/Batch Renderding/renders/scene_horizontal_no_number/image_out/*'
     bg_paths = ['/run/media/d0048/DATA/data/imagenet/raw/val_nodir/**']
-    fg_num = 32
+    fg_num = 64
 else:  # On server
     # fg_path = '/home/xiaoboh2/rm_synethesis_hal/data/Synethesized_Dataset/dataset_horizontal/image_out/*'
     fg_path = '/home/xiaoboh2/rm_synethesis_hal/data/Synethesized_Dataset/data_set_horizontal_new/image_out/*'
@@ -36,6 +36,30 @@ def crop_zero(image, reference=None):
     lower = np.squeeze(np.min(nonzeros, axis=0).astype(int))
     return image[lower[1]:upper[1], lower[0]:upper[0]]
 
+
+def remove_too_small(label, min_size=5000):
+    # Remove armor places with too small visible area
+    label = label.copy()
+    mask = np.sum(label, axis=2).astype(np.uint8)
+    mask[mask != 0] = 255
+    # nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(
+    # mask.copy(), connectivity=8)
+    # cv2.connectedComponentsWithStats(mask.copy(), connectivity=4)
+    # sizes = stats[1:, -1]
+    # mask = np.zeros_like(mask)
+    # for i in range(0, nb_components-1):
+    # if sizes[i] >= min_size:
+    # mask[output == i + 1] = 255
+    kernel = np.ones((50, 50), np.uint8)
+    mask = cv2.erode(mask, kernel, iterations=2)
+    mask = cv2.dilate(mask, kernel, iterations=2)
+    label[:, :, 0][mask == 0] = 0
+    label[:, :, 1][mask == 0] = 0
+    label[:, :, 2][mask == 0] = 0
+    label[:, :, 3][mask == 0] = 0
+    return label
+
+
 def load_foreground():
     fg_seg_pairs = []
     print(f'Loading forgrounds from {fg_path}:')
@@ -44,27 +68,12 @@ def load_foreground():
     for name in ProgressBar()(files[0:min(len(files), fg_num)]):
         try:
             image = cv2.imread(name, cv2.IMREAD_UNCHANGED)
-            image[:, :, 0], image[:, :, 2] = image[:, :, 2], image[:, :, 0].copy()
+            image[:, :, 0], image[:, :, 2] = image[:,
+                                                   :, 2], image[:, :, 0].copy()
             label = cv2.imread(name.replace('image', 'label'),
                                cv2.IMREAD_UNCHANGED)
             label = crop_zero(label, reference=image)
-
-            # Remove armor places with too small visible area
-            # mask = np.sum(label, axis=2).astype(np.uint8)
-            # mask[mask != 0] = 255
-            # nb_components, output, stats, centroids = cv2.connectedComponentsWithStats(mask.copy(), connectivity=8)
-            # cv2.connectedComponentsWithStats(mask.copy(), connectivity=4)
-            # sizes = stats[1:, -1]
-            # print(sizes)
-            # min_size = 5000
-            # mask = np.zeros_like(mask)
-            # for i in range(0, nb_components-1):
-                # if sizes[i] >= min_size:
-                    # mask[output == i + 1] = 255
-            # label[:, :, 0][mask==0] = 0
-            # label[:, :, 1][mask==0] = 0
-            # label[:, :, 2][mask==0] = 0
-            # label[:, :, 3][mask==0] = 0
+            label = remove_too_small(label)
 
             if(np.sum(label) == 0):
                 print('Skip empty')
@@ -78,6 +87,8 @@ def load_foreground():
             pass
     print(f'{len(fg_seg_pairs)} pairs of foreground loaded.')
     return fg_seg_pairs
+
+
 fg_seg_pairs = load_foreground()
 
 ia.seed(1)
@@ -108,7 +119,7 @@ seq = iaa.Sequential(
                 iaa.WithChannels(0, iaa.Add((-15, 15))),
                 iaa.WithChannels(1, iaa.Add((-20, 20))),
             ]),
-            iaa.GammaContrast((0.5, 1.5)),
+            iaa.GammaContrast((0.3, 1.5)),
             iaa.WithBrightnessChannels(iaa.Add((-30, 70))),
             iaa.ScaleX((0.5, 1.5)),
             iaa.ScaleY((0.5, 1.5)),
